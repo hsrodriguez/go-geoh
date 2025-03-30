@@ -2,20 +2,19 @@ package geoh
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hsrodriguez/go-geoh/internal/tools"
 	"github.com/mmcloughlin/geohash"
-	"github.com/paulmach/orb"
-	gj "github.com/paulmach/orb/geojson" // Import the geojson subpackage
 )
 
 // This function will convert the given geojson to a list of geohashes
 // with the specified precision.
 // It will return a list of geohashes as strings.
 func Geohashes(geojson string, precision uint, start_precision uint) []string {
-	var geohashes []string
+	geohashes := []string{}
 
-	mp := getMultiPolygon(geojson)
+	mp := tools.GetMultiPolygon(geojson)
 
 	p := start_precision
 	if p > precision {
@@ -23,58 +22,38 @@ func Geohashes(geojson string, precision uint, start_precision uint) []string {
 	}
 
 	// Get the center geohash of the multipolygon
-	center := getCenterGeohash(mp, p)
+	center := tools.GetCenterGeohash(mp, p)
 	// Add the center geohash to the list
 	geohashes = append(geohashes, center)
 
 	// Get the neighbors of the center geohash
 	neighbors := geohash.Neighbors(center)
 	// Add the neighbors to the list
-	geohashes = append(geohashes, neighbors...)
+	for _, neighbor := range neighbors {
+		// Check if the neighbor intersects with the multipolygon
+		if tools.Intersect(tools.GetGeohashPolygon(neighbor), mp) {
+			// If it does, add it to the list
+			geohashes = append(geohashes, neighbor)
+		}
+	}
 
-	fmt.Println(center)
+	for p < precision {
+		innerGeohashes := []string{}
+		for _, gh := range geohashes {
+			innerGeohashes = append(innerGeohashes, tools.GetInnerGeohashes(gh)...)
+		}
+		geohashes = geohashes[:0] // Clear the list to avoid duplicates
+		for _, gh := range innerGeohashes {
+			// Check if the inner geohash intersects with the multipolygon
+			if tools.Intersect(tools.GetGeohashPolygon(gh), mp) {
+				// If it does, add it to the list
+				geohashes = append(geohashes, gh)
+			}
+		}
+		p++
+	}
+
+	fmt.Println(strings.Join(geohashes, ","))
 
 	return geohashes
-}
-
-// This function will calculate the center geohash of a given multipolygon
-// with the specified precision.
-// It will return the geohash as a string.
-func getCenterGeohash(mp orb.MultiPolygon, precision uint) string {
-	centroid := tools.MultiPolygonCentroid(mp)
-	gh := geohash.EncodeWithPrecision(centroid[1], centroid[0], precision) // Note: geohash takes latitude, longitude
-	return gh
-}
-
-// This function will extract the multipolygon from the given geojson
-// It will return the multipolygon as an orb.MultiPolygon.
-func getMultiPolygon(geojson string) orb.MultiPolygon {
-	var multiPolygon orb.MultiPolygon
-
-	featureCollection, _ := gj.UnmarshalFeatureCollection([]byte(geojson))
-	if featureCollection != nil {
-		for _, feature := range featureCollection.Features {
-			if feature.Geometry != nil {
-				switch geom := feature.Geometry.(type) {
-				case orb.Polygon:
-					multiPolygon = append(multiPolygon, geom)
-				case orb.MultiPolygon:
-					multiPolygon = append(multiPolygon, geom...)
-				}
-			}
-		}
-	}
-	feature, _ := gj.UnmarshalFeature([]byte(geojson))
-	if feature != nil {
-		if feature.Geometry != nil {
-			switch geom := feature.Geometry.(type) {
-			case orb.Polygon:
-				multiPolygon = append(multiPolygon, geom)
-			case orb.MultiPolygon:
-				multiPolygon = append(multiPolygon, geom...)
-			}
-		}
-	}
-
-	return multiPolygon
 }
