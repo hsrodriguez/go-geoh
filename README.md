@@ -1,4 +1,5 @@
 # go-geoh
+[![Go Reference](https://pkg.go.dev/badge/github.com/hsrodriguez/go-geoh.svg)](https://pkg.go.dev/github.com/hsrodriguez/go-geoh)
 
 Find the geohashes that intersect with the given geoJSON
 
