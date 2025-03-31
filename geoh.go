@@ -1,11 +1,9 @@
 package geoh
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/hsrodriguez/go-geoh/internal/tools"
-	"github.com/mmcloughlin/geohash"
+	gh "github.com/mmcloughlin/geohash"
+	gj "github.com/tidwall/geojson"
+	"github.com/tidwall/geojson/geometry"
 )
 
 // This function will convert the given geojson to a list of geohashes
@@ -14,46 +12,90 @@ import (
 func Geohashes(geojson string, precision uint, start_precision uint) []string {
 	geohashes := []string{}
 
-	mp := tools.GetMultiPolygon(geojson)
+	//Parse the geojson to a feature collection
+	if fc, err := gj.Parse(geojson, nil); err != nil {
+		//Panics if the geojsoon is invalid
+		panic(err)
+	} else {
 
-	p := start_precision
-	if p > precision {
-		p = precision
-	}
-
-	// Get the center geohash of the multipolygon
-	center := tools.GetCenterGeohash(mp, p)
-	// Add the center geohash to the list
-	geohashes = append(geohashes, center)
-
-	// Get the neighbors of the center geohash
-	neighbors := geohash.Neighbors(center)
-	// Add the neighbors to the list
-	for _, neighbor := range neighbors {
-		// Check if the neighbor intersects with the multipolygon
-		if tools.Intersect(tools.GetGeohashPolygon(neighbor), mp) {
-			// If it does, add it to the list
-			geohashes = append(geohashes, neighbor)
+		//define the start precision
+		p := start_precision
+		if p > precision {
+			p = precision
 		}
-	}
 
-	for p < precision {
-		innerGeohashes := []string{}
-		for _, gh := range geohashes {
-			innerGeohashes = append(innerGeohashes, tools.GetInnerGeohashes(gh)...)
-		}
-		geohashes = geohashes[:0] // Clear the list to avoid duplicates
-		for _, gh := range innerGeohashes {
-			// Check if the inner geohash intersects with the multipolygon
-			if tools.Intersect(tools.GetGeohashPolygon(gh), mp) {
-				// If it does, add it to the list
-				geohashes = append(geohashes, gh)
+		//find the center geohash of the start precision
+		centerPoint := fc.Center()
+		center := gh.EncodeWithPrecision(centerPoint.Y, centerPoint.X, p)
+		// add the center geohash to the results
+		geohashes = append(geohashes, center)
+		// find the neighbors of the center geohash
+		neighbors := gh.Neighbors(center)
+		for _, neighbor := range neighbors {
+			// get the neighbor geohash polygon
+			p := getGeohashPolygon(neighbor)
+			// find if the neighbor geohash intersects with the feature collection
+			if fc.Intersects(p) {
+				//if it does, append to the current geohashes
+				geohashes = append(geohashes, neighbor)
 			}
 		}
-		p++
+
+		for p < precision {
+			inner := []string{}
+			//find the inner geohashes of each geohash
+			for _, gh := range geohashes {
+				inner = append(inner, getInnerGeohashes(gh)...)
+			}
+			//clean the geohashes to avoid duplicates
+			geohashes = geohashes[:0]
+			//iterate through the inner geohashes
+			for _, gh := range inner {
+				//convert the geohash to a polygon
+				p := getGeohashPolygon(gh)
+				//find if the geohash intersects with the feature collection
+				if fc.Intersects(p) {
+					//if it does, append to the current geohashes
+					geohashes = append(geohashes, gh)
+				}
+			}
+			//increase the precision
+			p++
+		}
 	}
 
-	fmt.Println(strings.Join(geohashes, ","))
-
 	return geohashes
+}
+
+// This function converts the geohash to a polygon
+// Returns a geojson.Polygon
+func getGeohashPolygon(geohash string) *gj.Polygon {
+	//get the bounding box
+	bbox := gh.BoundingBox(geohash)
+	//create the polygon points
+	points := []geometry.Point{
+		{X: bbox.MinLng, Y: bbox.MinLat},
+		{X: bbox.MaxLng, Y: bbox.MinLat},
+		{X: bbox.MaxLng, Y: bbox.MaxLat},
+		{X: bbox.MinLng, Y: bbox.MaxLat},
+		{X: bbox.MinLng, Y: bbox.MinLat},
+	}
+
+	//generate the poly
+	poly := geometry.NewPoly(points, nil, nil)
+	//return the polygon
+	return gj.NewPolygon(poly)
+}
+
+// This function gets the geohashes inside a geohash
+// Returns an array of geohashes in string
+func getInnerGeohashes(geohash string) []string {
+	const geohashBase = "0123456789bcdefghjkmnpqrstuvwxyz"
+	result := []string{}
+	//iterate through the base
+	for _, r := range geohashBase {
+		gh := geohash + string(r)
+		result = append(result, gh)
+	}
+	return result
 }

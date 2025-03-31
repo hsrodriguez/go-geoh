@@ -1,7 +1,9 @@
 package geoh
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +13,7 @@ func Test_Geohashes_FeatureCollection(t *testing.T) {
 	} else {
 		geojson := string(file)
 		geohashes := Geohashes(geojson, 6, 2)
+		fmt.Println(strings.Join(geohashes, "\n"))
 		if len(geohashes) == 0 {
 			t.Fatalf("Expected geohashes to be generated, but got none.")
 		}
